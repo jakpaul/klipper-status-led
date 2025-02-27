@@ -2,8 +2,8 @@
 
 import sys
 import os
+import argparse
 import logging
-import traceback
 import socket
 import time
 import errno
@@ -13,11 +13,19 @@ import json
 from config import StatusLEDConfig
 from led import AnimatedLED
 
-SOCKET_PATH_DEFAULT = "/home/paulg/printer_data/comms/klippy.sock"
+CONFIG_PATH_DEFAULT = os.path.expanduser("~/printer_data/config/status_led.cfg")
+SOCKET_PATH_DEFAULT = os.path.expanduser("~/printer_data/comms/klippy.sock")
 POLLING_INTERVAL_S = 0.25
 
 logging.getLogger().setLevel(logging.DEBUG)
 logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
+
+argParser = argparse.ArgumentParser(
+    prog="Klipper Status LED script",
+    description="Monitor Klipper status via its socket API and control a neopixel LED on Raspberry Pi GPIO",
+)
+argParser.add_argument("-c", "--config", default=CONFIG_PATH_DEFAULT)
+argParser.add_argument("-s", "--socket", default=SOCKET_PATH_DEFAULT)
 
 
 def createSocket(socketPath):
@@ -28,17 +36,26 @@ def createSocket(socketPath):
     while True:
         try:
             sock.connect(socketPath)
-        except socket.error as e:
+        except OSError as e:
             if e.errno == errno.ECONNREFUSED:
                 time.sleep(0.1)
                 continue
+            elif e.errno == errno.ENOENT:
+                # No such file or directory
+                logging.error(
+                    "Unable to open socket at '%s': No such file or directory. "
+                    "Check your config or the --socket option.",
+                    socketPath,
+                )
+            else:
+                logging.error(
+                    "Unable to open socket at '%s' [%d, %s]\n",
+                    socketPath,
+                    e.errno,
+                    errno.errorcode[e.errno],
+                )
 
-            logging.error(
-                "Unable to connect socket %s [%d,%s]\n",
-                socketPath, e.errno, errno.errorcode[e.errno]
-            )
-
-            return None
+            os._exit(e.errno)
         break
 
     logging.info("Connection.\n")
@@ -46,11 +63,11 @@ def createSocket(socketPath):
 
 
 class StatusMonitor:
-    def __init__(self, config):
+    def __init__(self, config, socketPathFallback):
         self.config = config
 
         self.socketPath = config.get(
-            "status_led", "socketPath", fallback=SOCKET_PATH_DEFAULT
+            "status_led", "socketPath", fallback=socketPathFallback
         )
         self.carriedData = b""
 
@@ -168,12 +185,14 @@ class StatusMonitor:
 
 
 def main():
+    args = argParser.parse_args()
+
     config = StatusLEDConfig()
-    config.load()
+    config.load(args.config)
 
     logging.info("Startup")
 
-    monitor = StatusMonitor(config)
+    monitor = StatusMonitor(config, args.socket)
     monitor.run()
 
 

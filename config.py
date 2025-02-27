@@ -6,8 +6,6 @@ import configparser
 
 from led import LEDState
 
-configPathDefault = "/home/paulg/printer_data/config/status_led.cfg"  # os.path.expanduser("~/printer_data/config/status_led.cfg")
-
 
 class StatusLEDConfig(configparser.ConfigParser):
     def __init__(self):
@@ -16,8 +14,22 @@ class StatusLEDConfig(configparser.ConfigParser):
         self.parsedStates = None
         self.parsedSections = None
 
-    def load(self):
-        self.read(configPathDefault)
+    def load(self, path):
+        configFileContents = ""
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                configFileContents = file.read()
+                # Dump config file contents to log
+                logging.info(
+                    "===== Config file =====\n%s\n=======================",
+                    configFileContents,
+                )
+        except FileNotFoundError:
+            logging.error("Config file at '%s' not found.", path)
+            os._exit(1)
+
+        # Parse configuration
+        self.read_string(configFileContents)
 
         if not "pin" in self["status_led"]:
             logging.error("Missing pin definition. Check config.")
@@ -47,7 +59,7 @@ class StatusLEDConfig(configparser.ConfigParser):
                 logging.error("Missing state color. Check config.")
                 os._exit(1)
 
-            logging.info("Parsed state: %s", state['config'].name)
+            logging.info("Parsed state: %s", state["config"].name)
 
         self.parsedSections = [
             {"config": self[section]}
@@ -64,7 +76,7 @@ class StatusLEDConfig(configparser.ConfigParser):
 
             section["sectionName"] = nameSplit[1]
 
-            logging.info("Parsed section: %s", section['config'].name)
+            logging.info("Parsed section: %s", section["config"].name)
 
     def getLEDStateBySection(self, currentState):
         logging.info("Loading state config of '%s'", currentState)
