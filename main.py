@@ -1,4 +1,13 @@
-import sys, os, logging, traceback, socket, time, errno, select
+# pylint: disable=C0103
+
+import sys
+import os
+import logging
+import traceback
+import socket
+import time
+import errno
+import select
 import json
 
 from config import StatusLEDConfig
@@ -10,11 +19,13 @@ POLLING_INTERVAL_S = 0.25
 logging.getLogger().setLevel(logging.DEBUG)
 logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
+
 def createSocket(socketPath):
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.setblocking(0)
-    logging.info("Waiting for connect to %s\n" % (socketPath,))
-    while 1:
+    logging.info("Waiting for connect to %s\n", socketPath)
+
+    while True:
         try:
             sock.connect(socketPath)
         except socket.error as e:
@@ -22,10 +33,11 @@ def createSocket(socketPath):
                 time.sleep(0.1)
                 continue
 
-            logging.error("Unable to connect socket %s [%d,%s]\n"
-                             % (socketPath, e.errno,
-                                errno.errorcode[e.errno]))
-            
+            logging.error(
+                "Unable to connect socket %s [%d,%s]\n",
+                socketPath, e.errno, errno.errorcode[e.errno]
+            )
+
             return None
         break
 
@@ -37,19 +49,24 @@ class StatusMonitor:
     def __init__(self, config):
         self.config = config
 
-        self.socketPath = config.get("status_led", "socketPath", fallback=SOCKET_PATH_DEFAULT)
-        self.carriedData = b''
+        self.socketPath = config.get(
+            "status_led", "socketPath", fallback=SOCKET_PATH_DEFAULT
+        )
+        self.carriedData = b""
 
         self.isConnected = False
-        self.lastKlipperState = ""  # possible states: "ready", "startup", "error", "shutdown"
-        self.lastPrintState = ""    # possible states: "standby", "printing", "paused", "error", "complete"
+        self.lastKlipperState = (
+            ""  # possible states: "ready", "startup", "error", "shutdown"
+        )
+        self.lastPrintState = (
+            ""  # possible states: "standby", "printing", "paused", "error", "complete"
+        )
         self.lastCustomState = ""
 
         self.ledState = None
 
         self.led = AnimatedLED(config)
         self.updateLEDState()
-
 
     def connect(self):
         self.sock = createSocket(self.socketPath)
@@ -59,7 +76,6 @@ class StatusMonitor:
 
             self.poll = select.poll()
             self.poll.register(self.sock, select.POLLIN | select.POLLHUP)
-    
 
     def queryStatus(self):
         # cmd = '{"id": "ksl-info", "method": "info", "params": {}}'
@@ -67,13 +83,14 @@ class StatusMonitor:
         infoCmd = '{"id": "ksl-info", "method": "info", "params": {}}'
         statsCmd = '{"id": "ksl-stats", "method": "objects/query", "params": {"objects": {"print_stats": ["state"]}}}'
 
-        sendFunc = lambda m, jsonStr: m.sock.send(jsonStr.encode() + b"\x03")
+        def sendFunc(m, jsonStr):
+            return m.sock.send(jsonStr.encode() + b"\x03")
 
         try:
             sendFunc(self, infoCmd)
             if self.lastKlipperState == "ready":
                 sendFunc(self, statsCmd)
-        except BrokenPipeError as e:
+        except BrokenPipeError:
             logging.warning("Broken pipe.")
             self.isConnected = False
 
@@ -83,25 +100,25 @@ class StatusMonitor:
         stateHasChanged = False
 
         if parsed["id"] == "ksl-info":
-            newState = parsed['result']['state']
+            newState = parsed["result"]["state"]
             if self.lastKlipperState != newState:
                 self.lastKlipperState = newState
                 stateHasChanged = True
-                logging.info(f"Klipper state: {self.lastKlipperState}")
+                logging.info("Klipper state: %s", self.lastKlipperState)
 
         elif parsed["id"] == "ksl-stats":
-            newState = parsed['result']['status']['print_stats']['state']
+            newState = parsed["result"]["status"]["print_stats"]["state"]
             if self.lastPrintState != newState:
                 self.lastPrintState = newState
                 stateHasChanged = True
-                logging.info(f"Print state: {self.lastPrintState}")
+                logging.info("Print state: %s", self.lastPrintState)
 
         if stateHasChanged:
             # Clear the custom state
             self.lastCustomState = ""
-            
+
             self.updateLEDState()
-        
+
     def updateLEDState(self):
         stateStr = "unknown"
         if self.isConnected:
@@ -113,8 +130,6 @@ class StatusMonitor:
                 stateStr = "klipper_" + self.lastKlipperState
 
         self.led.updateState(self.config.getLEDStateBySection(stateStr))
-    
-        
 
     def processFromSocket(self):
         data = self.sock.recv(4096)
@@ -122,9 +137,9 @@ class StatusMonitor:
             sys.stderr.write("Socket closed\n")
             sys.exit(0)
 
-        #logging.info("recv")
-        
-        parts = data.split(b'\x03')
+        # logging.info("recv")
+
+        parts = data.split(b"\x03")
         parts[0] = self.carriedData + parts[0]
         self.carriedData = parts.pop()
 
@@ -133,9 +148,8 @@ class StatusMonitor:
 
     def handleMessage(self, line):
         parsed = json.loads(line.decode())
-        #logging.info(f"GOT: {parsed}")
+        # logging.info(f"GOT: {parsed}")
         self.updateStatusFromSocket(parsed)
-
 
     def run(self):
         nextTime = time.time()
@@ -143,8 +157,8 @@ class StatusMonitor:
             if not self.isConnected:
                 self.connect()
             else:
-                res = self.poll.poll(1000.)
-                for fd, event in res:
+                res = self.poll.poll(1000.0)
+                for _ in res:
                     self.processFromSocket()
 
                 self.queryStatus()
@@ -166,6 +180,6 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except Exception as e:
-        logging.exception(f"Fatal error in main loop:\n{e}\n\n{traceback.format_exc()}")
+    except Exception as e:  # pylint: disable=W0718
+        logging.exception("Fatal error in main:\n%s\n", e)
         os._exit(1)
