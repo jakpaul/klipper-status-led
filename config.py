@@ -127,6 +127,11 @@ class StatusLEDConfig(configparser.ConfigParser):
                                 "animation_interval", fallback=1
                             )
                         ),
+                        (
+                            section["sectionName"]
+                            if section and "sectionName" in section
+                            else "default"
+                        ),
                     )
                 )
             else:

@@ -118,7 +118,8 @@ class AnimatedLED:
                 mixedColor
             ] * sectionLen
 
-        # Check whether brightnesses have changed
+        # To avoid updating when the animation state is still the same,
+        # check whether brightnesses have changed
         if (
             not forceUpdate
             and self.brightnesses is not None
@@ -147,6 +148,7 @@ class LEDState:
         secondaryRgb=(0, 0, 0),
         anim="solid",
         animInterval=1,
+        sectionName="default",
     ):
         self.bounds = bounds
         self.rgb = rgb
@@ -154,4 +156,12 @@ class LEDState:
         self.anim = anim
         self.animInterval = animInterval
 
-        print(f"State: {bounds}; {rgb}; {anim}")
+        logging.info(
+            "Section ('%s' | %s) state: \t %s | %s | %s | %ss",
+            sectionName,
+            bounds,
+            rgb,
+            secondaryRgb,
+            anim,
+            animInterval,
+        )
