@@ -4,6 +4,7 @@ import os
 import logging
 import configparser
 
+from log import log
 from led import LEDState
 
 
@@ -19,21 +20,22 @@ class StatusLEDConfig(configparser.ConfigParser):
         try:
             with open(path, "r", encoding="utf-8") as file:
                 configFileContents = file.read()
-                # Dump config file contents to log
-                logging.info(
-                    "===== Config file =====\n%s\n=======================",
-                    configFileContents,
-                )
         except FileNotFoundError:
             logging.error("Config file at '%s' not found.", path)
-            os._exit(1)
+            log.flushAndExit(1)
+
+        # Dump config file contents to log
+        logging.info(
+            "\n===== Config file =====\n%s\n=======================",
+            configFileContents,
+        )
 
         # Parse configuration
         self.read_string(configFileContents)
 
         if not "pin" in self["status_led"]:
             logging.error("Missing pin definition. Check config.")
-            os._exit(1)
+            raise InvalidConfigException()
 
         self.parsedStates = [
             {"config": self[section]}
@@ -42,7 +44,7 @@ class StatusLEDConfig(configparser.ConfigParser):
         ]
         if len(self.parsedStates) == 0:
             logging.error("No states defined. Check config.")
-            os._exit(1)
+            raise InvalidConfigException()
 
         for state in self.parsedStates:
             nameSplit = state["config"].name.split(" ")
@@ -51,15 +53,15 @@ class StatusLEDConfig(configparser.ConfigParser):
                 state["sectionNameList"] = nameSplit[2].split(",")
             elif len(nameSplit) <= 1:
                 logging.error("Missing state name. Check config.")
-                os._exit(1)
+                raise InvalidConfigException()
 
             state["stateNameList"] = nameSplit[1].split(",")
 
             if not "rgb" in state["config"]:
                 logging.error("Missing state color. Check config.")
-                os._exit(1)
+                raise InvalidConfigException()
 
-            logging.info("Parsed state: %s", state["config"].name)
+            logging.info("Parsed state: '%s'", state["config"].name)
 
         self.parsedSections = [
             {"config": self[section]}
@@ -72,11 +74,11 @@ class StatusLEDConfig(configparser.ConfigParser):
 
             if len(nameSplit) <= 1:
                 logging.error("Missing section name. Check config.")
-                os._exit(1)
+                raise InvalidConfigException()
 
             section["sectionName"] = nameSplit[1]
 
-            logging.info("Parsed section: %s", section["config"].name)
+            logging.info("Parsed section: '%s'", section["config"].name)
 
     def getLEDStateBySection(self, currentState):
         logging.info("Loading state config of '%s'", currentState)
@@ -160,3 +162,7 @@ class StatusLEDConfig(configparser.ConfigParser):
     @staticmethod
     def strToIntTuple(tupleStr):
         return tuple([int(val) for val in tupleStr.strip().split(",")])
+
+
+class InvalidConfigException(Exception):
+    pass

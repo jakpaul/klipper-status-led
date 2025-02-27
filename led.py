@@ -9,6 +9,8 @@ import neopixel
 
 import time, threading
 
+from log import log
+
 # ugly pin lookup dictionary
 PIN_DICT = {
     "D0": board.D0,
@@ -84,7 +86,7 @@ class AnimatedLED:
                 "Error initializing neopixels:\n%s\n",
                 e,
             )
-            os._exit(1)
+            log.flushAndExit(1)
 
         timerThread = threading.Thread(target=self.run)
         timerThread.start()
@@ -156,7 +158,7 @@ class LEDState:
         self.anim = anim
         self.animInterval = animInterval
 
-        logging.info(
+        logging.debug(
             "Section ('%s' | %s) state: \t %s | %s | %s | %ss",
             sectionName,
             bounds,

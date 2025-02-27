@@ -10,15 +10,15 @@ import errno
 import select
 import json
 
+from log import log
 from config import StatusLEDConfig
+from config import InvalidConfigException
 from led import AnimatedLED
 
 CONFIG_PATH_DEFAULT = os.path.expanduser("~/printer_data/config/status_led.cfg")
 SOCKET_PATH_DEFAULT = os.path.expanduser("~/printer_data/comms/klippy.sock")
+LOG_PATH_DEFAULT = os.path.expanduser("~/printer_data/logs/status_led.log")
 POLLING_INTERVAL_S = 0.25
-
-logging.getLogger().setLevel(logging.DEBUG)
-logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
 argParser = argparse.ArgumentParser(
     prog="Klipper Status LED script",
@@ -26,12 +26,14 @@ argParser = argparse.ArgumentParser(
 )
 argParser.add_argument("-c", "--config", default=CONFIG_PATH_DEFAULT)
 argParser.add_argument("-s", "--socket", default=SOCKET_PATH_DEFAULT)
+argParser.add_argument("-l", "--log", default=LOG_PATH_DEFAULT)
+argParser.add_argument("-v", "--verbose", action="store_true", default=False)
 
 
 def createSocket(socketPath):
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.setblocking(0)
-    logging.info("Waiting for connect to %s\n", socketPath)
+    logging.info("Waiting for connection to '%s'", socketPath)
 
     while True:
         try:
@@ -55,10 +57,10 @@ def createSocket(socketPath):
                     errno.errorcode[e.errno],
                 )
 
-            os._exit(e.errno)
+            log.flushAndExit(e.errno)
         break
 
-    logging.info("Connection.\n")
+    logging.info("Connected.")
     return sock
 
 
@@ -66,8 +68,11 @@ class StatusMonitor:
     def __init__(self, config, socketPathFallback):
         self.config = config
 
+        self.sock = None
+        self.poll = None
+
         self.socketPath = config.get(
-            "status_led", "socketPath", fallback=socketPathFallback
+            "status_led", "klippy_uds_path", fallback=socketPathFallback
         )
         self.carriedData = b""
 
@@ -121,14 +126,14 @@ class StatusMonitor:
             if self.lastKlipperState != newState:
                 self.lastKlipperState = newState
                 stateHasChanged = True
-                logging.info("Klipper state: %s", self.lastKlipperState)
+                logging.debug("Klipper state: %s", self.lastKlipperState)
 
         elif parsed["id"] == "ksl-stats":
             newState = parsed["result"]["status"]["print_stats"]["state"]
             if self.lastPrintState != newState:
                 self.lastPrintState = newState
                 stateHasChanged = True
-                logging.info("Print state: %s", self.lastPrintState)
+                logging.debug("Print state: %s", self.lastPrintState)
 
         if stateHasChanged:
             # Clear the custom state
@@ -187,13 +192,23 @@ class StatusMonitor:
 def main():
     args = argParser.parse_args()
 
-    config = StatusLEDConfig()
-    config.load(args.config)
+    log.initQueue(args.verbose)
 
     logging.info("Startup")
 
-    monitor = StatusMonitor(config, args.socket)
-    monitor.run()
+    config = StatusLEDConfig()
+    logPath = config.get("status_led", "log_path", fallback=args.log)
+
+    try:
+        config.load(args.config)
+
+        log.start(logPath)
+
+        monitor = StatusMonitor(config, args.socket)
+        monitor.run()
+    except InvalidConfigException:
+        log.start(logPath)
+        log.flushAndExit(1)
 
 
 if __name__ == "__main__":
@@ -201,4 +216,4 @@ if __name__ == "__main__":
         main()
     except Exception as e:  # pylint: disable=W0718
         logging.exception("Fatal error in main:\n%s\n", e)
-        os._exit(1)
+        log.flushAndExit(1)
