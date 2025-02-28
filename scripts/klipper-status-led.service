@@ -1,0 +1,12 @@
+[Unit]
+Description=Starts the klipper-status-led script
+Documentation=https://github.com/jakpaul/klipper-status-led
+After=klipper.service
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=-KSL_PYTHON_VENV_DIR/bin/python KSL_INSTALL_DIR/main.py -c KSL_CONFIG_FILE -s KSL_SOCKET -l KSL_LOG_DIR/status_led.log
