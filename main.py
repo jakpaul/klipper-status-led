@@ -19,6 +19,7 @@ CONFIG_PATH_DEFAULT = os.path.expanduser("~/printer_data/config/status_led.cfg")
 SOCKET_PATH_DEFAULT = os.path.expanduser("~/printer_data/comms/klippy.sock")
 LOG_PATH_DEFAULT = os.path.expanduser("~/printer_data/logs/status_led.log")
 POLLING_INTERVAL_S = 0.25
+MAX_NUM_REQUESTS_IN_BUFFER = 5
 
 argParser = argparse.ArgumentParser(
     prog="Klipper Status LED script",
@@ -175,17 +176,29 @@ class StatusMonitor:
 
     def run(self):
         nextTime = time.time()
+        requestsInBuffer = 0
+
         while True:
             if not self.isConnected:
                 self.connect()
+                nextTime = time.time()
+                requestsInBuffer = 0
             else:
                 res = self.poll.poll(1000.0)
                 for _ in res:
                     self.processFromSocket()
+                    requestsInBuffer = requestsInBuffer - 1
 
-                self.queryStatus()
+                # Stop sending when Klipper is unresponsive
+                # to prevent overloading
+                # When there are too many pending requests,
+                # Klipper may be unable to handle them
+                if requestsInBuffer < MAX_NUM_REQUESTS_IN_BUFFER:
+                    self.queryStatus()
 
-                nextTime = nextTime + POLLING_INTERVAL_S
+                    requestsInBuffer = requestsInBuffer + 1
+
+                nextTime = max(nextTime + POLLING_INTERVAL_S, time.time())
                 time.sleep(max(0, nextTime - time.time()))
 
 
