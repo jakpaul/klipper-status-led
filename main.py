@@ -155,10 +155,16 @@ class StatusMonitor:
         self.led.updateState(self.config.getLEDStateBySection(stateStr))
 
     def processFromSocket(self):
-        data = self.sock.recv(4096)
+        data = None
+        try:
+            data = self.sock.recv(4096)
+        except Exception as e:  # pylint: disable=W0718
+            logging.warning("Error reading from socket:\n%s\n", e)
+            
         if not data:
-            sys.stderr.write("Socket closed\n")
-            sys.exit(0)
+            logging.warning("Socket closed.")
+            self.isConnected = False
+            return
 
         # logging.info("recv")
 
