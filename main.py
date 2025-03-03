@@ -101,19 +101,22 @@ class StatusMonitor:
             self.poll = select.poll()
             self.poll.register(self.sock, select.POLLIN | select.POLLHUP)
 
+    def registerRemoteMethods(self):
+        ledStateMethodCmd = '{"id": "ksl-set-state-reg", "method": "register_remote_method", "params": {"response_template": {"action": "set_status_led"}, "remote_method": "set_status_led"}}'
+
+        self.sendRequest(ledStateMethodCmd)
+
     def queryStatus(self):
-        # cmd = '{"id": "ksl-info", "method": "info", "params": {}}'
-        # cmd = '{"id": "ksl-info", "method": "objects/query", "params": {"objects": {"status": ["progress"], "print_stats": ["state"]}}}'
         infoCmd = '{"id": "ksl-info", "method": "info", "params": {}}'
         statsCmd = '{"id": "ksl-stats", "method": "objects/query", "params": {"objects": {"print_stats": ["state"]}}}'
 
-        def sendFunc(m, jsonStr):
-            return m.sock.send(jsonStr.encode() + b"\x03")
+        self.sendRequest(infoCmd)
+        if self.lastKlipperState == "ready":
+            self.sendRequest(statsCmd)
 
+    def sendRequest(self, jsonStr):
         try:
-            sendFunc(self, infoCmd)
-            if self.lastKlipperState == "ready":
-                sendFunc(self, statsCmd)
+            return self.sock.send(jsonStr.encode() + b"\x03")
         except BrokenPipeError:
             logging.warning("Broken pipe.")
             self.isConnected = False
@@ -123,31 +126,56 @@ class StatusMonitor:
     def updateStatusFromSocket(self, parsed):
         stateHasChanged = False
 
-        if parsed["id"] == "ksl-info":
-            newState = parsed["result"]["state"]
-            if self.lastKlipperState != newState:
-                self.lastKlipperState = newState
-                stateHasChanged = True
-                logging.debug("Klipper state: %s", self.lastKlipperState)
+        if (
+            "action" in parsed
+            and "params" in parsed
+            and parsed["action"] == "set_status_led"
+        ):
+            if "state" in parsed["params"]:
+                newState = parsed["params"]["state"]
 
-        elif parsed["id"] == "ksl-stats":
-            newState = parsed["result"]["status"]["print_stats"]["state"]
-            if self.lastPrintState != newState:
-                self.lastPrintState = newState
-                stateHasChanged = True
-                logging.debug("Print state: %s", self.lastPrintState)
+                if self.lastGcodeState != newState:
+                    self.lastGcodeState = newState
+                    stateHasChanged = True
+                    logging.debug(
+                        "Gcode state: %s",
+                        self.lastGcodeState if self.lastGcodeState else "[None]",
+                    )
+
+            elif "enabled" in parsed["params"]:
+                logging.debug("se: %s", bool(parsed["params"]["enabled"]))
+                self.led.setEnabled(bool(parsed["params"]["enabled"]))
+
+        elif "id" in parsed:
+            if parsed["id"] == "ksl-set-state-reg":
+                logging.info("Remote method 'set_status_led' registered.")
+
+            elif parsed["id"] == "ksl-info":
+                newState = parsed["result"]["state"]
+
+                if self.lastKlipperState != newState:
+                    self.lastKlipperState = newState
+                    self.lastGcodeState = ""
+                    stateHasChanged = True
+                    logging.debug("Klipper state: %s", self.lastKlipperState)
+
+            elif parsed["id"] == "ksl-stats":
+                newState = parsed["result"]["status"]["print_stats"]["state"]
+
+                if self.lastPrintState != newState:
+                    self.lastPrintState = newState
+                    self.lastGcodeState = ""
+                    stateHasChanged = True
+                    logging.debug("Print state: %s", self.lastPrintState)
 
         if stateHasChanged:
-            # Clear the custom state
-            self.lastCustomState = ""
-
             self.updateLEDState()
 
     def updateLEDState(self):
         stateStr = "unknown"
         if self.isConnected:
-            if self.lastCustomState != "":
-                stateStr = "custom_" + self.lastCustomState
+            if self.lastGcodeState != "":
+                stateStr = "gcode_" + self.lastGcodeState
             elif self.lastKlipperState == "ready" and self.lastPrintState != "":
                 stateStr = "print_" + self.lastPrintState
             else:
@@ -188,6 +216,10 @@ class StatusMonitor:
         while True:
             if not self.isConnected:
                 self.connect()
+
+                if self.isConnected:
+                    self.registerRemoteMethods()
+
                 nextTime = time.time()
                 requestsInBuffer = 0
             else:

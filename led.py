@@ -69,6 +69,8 @@ class AnimatedLED:
     def __init__(self, config):
         self.config = config
 
+        self.enabled = True
+
         self.states = None
         self.brightnesses = None
 
@@ -76,6 +78,8 @@ class AnimatedLED:
             self.leds = neopixel.NeoPixel(
                 PIN_DICT[config.get("status_led", "pin")],
                 int(config.get("status_led", "chain_count", fallback="1")),
+                bpp=config.get("status_led", "bpp", fallback=3),
+                pixel_order=config.get("status_led", "color_order", fallback="GRB"),
                 auto_write=False,
             )
             self.leds.fill((0, 0, 0))
@@ -91,12 +95,22 @@ class AnimatedLED:
         timerThread = threading.Thread(target=self.run)
         timerThread.start()
 
+    def setEnabled(self, enabled):
+        if enabled != self.enabled:
+            self.enabled = enabled
+
+            if enabled:
+                self.write(True)
+            else:
+                self.leds.fill((0, 0, 0))
+                self.leds.show()
+
     def updateState(self, states):
         self.states = states
         self.write(True)
 
     def write(self, forceUpdate):
-        if not self.states or not self.leds:
+        if not self.states or not self.leds or not self.enabled:
             return
 
         brightnesses = []
