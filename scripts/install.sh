@@ -113,6 +113,54 @@ readPathsFromUser() {
     done
 }
 
+installDependencies() {
+    if [ "$KSL_PYTHON_VENV_DIR" = "/" ]
+        then
+            printf "Failed to resolve venv location. Aborting.\n"
+            exit 1
+    fi
+
+    if [ -d "$KSL_PYTHON_VENV_DIR" ];
+        then
+            printf "Removing old virtual environment\n"
+            rm -rf "$KSL_PYTHON_VENV_DIR"
+    fi
+
+    printf "Installing/Updating system packages\n"
+
+    sudo apt-get update
+    sudo apt-get upgrade -y
+    sudo apt-get install -y python3-pip i2c-tools libgpiod-dev python3-libgpiod
+
+    if [ $? -gt 0 ]; then
+        printf "Unable to install dependencies, aborting install.\n"
+        deactivate
+        exit 1
+    fi
+
+
+    printf "Creating virtual environment in '$KSL_PYTHON_VENV_DIR'\n"
+    python3 -m venv "$KSL_PYTHON_VENV_DIR"
+
+    if ! . "$KSL_PYTHON_VENV_DIR/bin/activate";
+        then
+            printf "Could not activate the enviroment.\n"
+            exit 1
+    fi
+
+    pip install --upgrade pip setuptools
+    pip install -r $KSL_INSTALL_DIR/requirements.txt
+
+    if [ $? -gt 0 ]; then
+        printf "Unable to install python dependencies, aborting install.\n"
+        deactivate
+        exit 1
+    fi
+
+    deactivate
+    printf "Virtual environment created successfully.\n"
+}
+
 installService() {
     printf "Installing service\n"
 
@@ -138,4 +186,13 @@ fi
 
 verifyRequirements
 readPathsFromUser
+installDependencies
 installService
+
+printf "\nInstallation complete. The service will start after a reboot, or you can start it immediately.\n"
+
+read -r -e -p "Would you like to do so? [Y/n]" START
+if [[ ! "$START" =~ ^[nN]$ ]];
+    then
+        service klipper-status-led start
+fi
