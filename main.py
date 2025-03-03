@@ -78,13 +78,14 @@ class StatusMonitor:
         self.carriedData = b""
 
         self.isConnected = False
+        
+        # possible states: "ready", "startup", "error", "shutdown"
         self.lastKlipperState = (
-            ""  # possible states: "ready", "startup", "error", "shutdown"
+            ""
         )
-        self.lastPrintState = (
-            ""  # possible states: "standby", "printing", "paused", "error", "complete"
-        )
-        self.lastCustomState = ""
+        # possible states: "standby", "printing", "paused", "cancelled", "error", "complete"
+        self.lastPrintState = ""
+        self.lastGcodeState = ""
 
         self.ledState = None
 
@@ -160,7 +161,7 @@ class StatusMonitor:
             data = self.sock.recv(4096)
         except Exception as e:  # pylint: disable=W0718
             logging.warning("Error reading from socket:\n%s\n", e)
-            
+
         if not data:
             logging.warning("Socket closed.")
             self.isConnected = False

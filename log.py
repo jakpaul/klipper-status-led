@@ -46,9 +46,7 @@ class Log:
 
         if not fileHandler or not logFilePath:
             logging.warning("File logs are disabled. Logging to stdout only.")
-            self.listener = logging.handlers.QueueListener(
-                self.queue, stdOutHandler
-            )
+            self.listener = logging.handlers.QueueListener(self.queue, stdOutHandler)
 
         self.listener.start()
 
